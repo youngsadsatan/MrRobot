@@ -3,7 +3,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 
-# Poster da série (playlist cover)
+# Série poster (playlist cover)
 poster_url = (
     "https://www.apple.com/br/tv-pr/shows-and-films/t/the-studio/images/"
     "season-01/show-home-graphic-header/key-art-01/4x1/"
@@ -28,6 +28,9 @@ pattern = re.compile(r"\.S01E(\d{2})")
 episodes = [(int(pattern.search(u).group(1)), u) for u in urls if pattern.search(u)]
 episodes.sort(key=lambda x: x[0])
 
+# Cabeçalhos para requisição
+headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+
 with open("playlist.m3u", "w", encoding="utf-8") as f:
     f.write("#EXTM3U\n")
     f.write("#EXTENC:UTF-8\n")
@@ -35,20 +38,25 @@ with open("playlist.m3u", "w", encoding="utf-8") as f:
     f.write(f"#EXTIMG:{poster_url}\n")
 
     for num, page_url in episodes:
-        # Fetch HTML e parse
-        resp = requests.get(page_url)
+        resp = requests.get(page_url, headers=headers)
         soup = BeautifulSoup(resp.text, "html.parser")
-        video_tag = soup.find("video", id="mainvideo")
-        if not video_tag or not video_tag.has_attr("src"):
-            print(f"Erro: tag video não encontrada em {page_url}")
+
+        # Extrai do norobotlink ou captchalink
+        link_tag = soup.find(id="norobotlink") or soup.find(id="captchalink")
+        if link_tag:
+            src = link_tag.get_text().strip()
+        else:
+            print(f"Erro: não encontrou link em {page_url}")
             continue
-        src = video_tag["src"].strip()
-        # garante prefixo https:
+
+        # Adiciona https: se necessário
         if src.startswith("//"):
             src = "https:" + src
+        if "?" not in src:
+            src += "?stream=1"
 
         f.write(
             f'#EXTINF:0 tvg-name="" audio-track="" tvg-logo="" '
             f'group-title="O Estúdio",S01E{num:02d}\n'
         )
-        f.write(src + "?stream=1\n")
+        f.write(src + "\n")
