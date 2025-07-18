@@ -1,15 +1,15 @@
-# generate_playlist.py
+# playlist.py
 import subprocess
 import re
 
-# Poster da série (playlist cover)
+# Série poster (playlist cover)
 poster_url = (
     "https://www.apple.com/br/tv-pr/shows-and-films/t/the-studio/images/"
     "season-01/show-home-graphic-header/key-art-01/4x1/"
     "Apple_TV_The_Studio_key_art_graphic_header_4_1_show_home.jpg.small_2x.jpg"
 )
 
-# Streamtape URLs list (ordenada de S01E01 a S01E10)
+# URLs de Streamtape em ordem
 urls = [
     "https://streamtape.com/v/j6LBmKO9kofLpz/O.Estudio.S01E01.mkv",
     "https://streamtape.com/v/1Wwd2mz9p1FbqM/O.Estudio.S01E02.mkv",
@@ -23,28 +23,25 @@ urls = [
     "https://streamtape.com/v/jaBQp89vOOCzRKg/O.Estudio.S01E10.mkv",
 ]
 
-# Extract episode number and sort (redundante aqui, mas mantém ordem confiável)
 pattern = re.compile(r"\.S01E(\d{2})")
 episodes = []
 for u in urls:
     m = pattern.search(u)
     if m:
-        num = int(m.group(1))
-        episodes.append((num, u))
+        episodes.append((int(m.group(1)), u))
 episodes.sort(key=lambda x: x[0])
 
-# Generate Extended M3U playlist (docs/O_Estudio.m3u)
-with open("docs/O_Estudio.m3u", "w", encoding="utf-8") as f:
+# Cria playlist M3U na raiz (playlist.m3u)
+with open("playlist.m3u", "w", encoding="utf-8") as f:
     f.write("#EXTM3U\n")
     f.write("#EXTENC:UTF-8\n")
     f.write("#PLAYLIST:O Estúdio\n")
     f.write(f"#EXTIMG:{poster_url}\n")
     for num, u in episodes:
-        # yt-dlp -g returns the direct stream URL
         res = subprocess.run(["yt-dlp", "-g", u], capture_output=True, text=True, check=True)
-        stream_url = res.stdout.strip()
+        url_direct = res.stdout.strip()
         f.write(
             f'#EXTINF:0 tvg-name="" audio-track="" tvg-logo="" '
             f'group-title="O Estúdio",S01E{num:02d}\n'
         )
-        f.write(stream_url + "\n")
+        f.write(url_direct + "\n")
