@@ -3,14 +3,14 @@ import requests
 from bs4 import BeautifulSoup
 import re
 
-# Poster
+# Série poster (header cover)
 poster_url = (
     "https://www.apple.com/br/tv-pr/shows-and-films/t/the-studio/images/"
     "season-01/show-home-graphic-header/key-art-01/4x1/"
     "Apple_TV_The_Studio_key_art_graphic_header_4_1_show_home.jpg.small_2x.jpg"
 )
 
-# Streamtape URLs from E01 to E10
+# URLs de Streamtape em ordem de E01 a E10
 urls = [
     "https://streamtape.com/v/j6LBmKO9kofLpz/O.Estudio.S01E01.mkv",
     "https://streamtape.com/v/1Wwd2mz9p1FbqM/O.Estudio.S01E02.mkv",
@@ -38,23 +38,31 @@ with open("playlist.m3u", "w", encoding="utf-8") as f:
     f.write(f"#EXTIMG:{poster_url}\n")
 
     for num, page_url in episodes:
-        # Load page and extract link via norobotlink
+        # Carrega página e extrai link via norobotlink
         resp = requests.get(page_url, headers=headers)
         soup = BeautifulSoup(resp.text, "html.parser")
         link_tag = soup.find(id="norobotlink") or soup.find(id="captchalink")
         if not link_tag:
-            print(f"Errot: URL not found in {page_url}")
+            print(f"Erro: não encontrou link em {page_url}")
             continue
         src = link_tag.get_text().strip()
 
-        # Prefix and parameters
+        # Normaliza URL completa
         if src.startswith("//"):
             src = "https:" + src
-        # Add dl=1
-        if "dl=1" not in src:
-            delim = '&' if '?' in src else '?' 
-            src += f"{delim}dl=1"
+        elif src.startswith("/"):
+            src = "https://streamtape.com" + src
+        # Garante https no início
+        elif not src.startswith("http"):
+            src = "https://" + src
 
-        # Write the episode
-        f.write(f"#EXTINF:0,O Estúdio • S01E{num:02d}\n")
+        # Adiciona &dl=1 se não existir
+        if "dl=1" not in src:
+            if "?" in src:
+                src += "&dl=1"
+            else:
+                src += "?dl=1"
+
+        # Escreve o episódio
+        f.write(f"#EXTINF:0,O Estúdio S01E{num:02d}\n")
         f.write(src + "\n")
