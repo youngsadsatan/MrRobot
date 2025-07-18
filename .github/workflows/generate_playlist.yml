@@ -1,0 +1,31 @@
+# .github/workflows/generate_playlist.yml
+name: Playlist
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Instalar yt-dlp
+        run: pip install yt-dlp
+
+      - name: Gerar playlist M3U
+        run: python generate_playlist.py
+
+      - name: Commit e Push
+        run: |
+          git config user.name "youngsadsatan"
+          git config user.email "114822995+youngsadsatan@users.noreply.github.com"
+          git add docs/
+          git commit -m "Atualiza playlist O Estúdio S01"
+          git push
