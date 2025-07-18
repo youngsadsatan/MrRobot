@@ -47,22 +47,29 @@ with open("playlist.m3u", "w", encoding="utf-8") as f:
             continue
         src = link_tag.get_text().strip()
 
-        # Normaliza URL completa
+        # Normaliza URL
         if src.startswith("//"):
             src = "https:" + src
         elif src.startswith("/"):
             src = "https://streamtape.com" + src
-        # Garante https no início
         elif not src.startswith("http"):
             src = "https://" + src
 
-        # Adiciona &dl=1 se não existir
+        # Adiciona dl=1 se não existir
         if "dl=1" not in src:
             if "?" in src:
                 src += "&dl=1"
             else:
                 src += "?dl=1"
 
+        # Resolve redirect para pegar o domínio tapecontent.net
+        try:
+            head = requests.head(src, headers=headers, allow_redirects=False)
+            location = head.headers.get("Location")
+            final_url = location if location else src
+        except requests.RequestException:
+            final_url = src
+
         # Escreve o episódio
         f.write(f"#EXTINF:0,O Estúdio S01E{num:02d}\n")
-        f.write(src + "\n")
+        f.write(final_url + "\n")
