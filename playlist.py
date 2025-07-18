@@ -1,8 +1,9 @@
 # playlist.py
-import subprocess
+import requests
+from bs4 import BeautifulSoup
 import re
 
-# Série poster (playlist cover)
+# Poster da série (playlist cover)
 poster_url = (
     "https://www.apple.com/br/tv-pr/shows-and-films/t/the-studio/images/"
     "season-01/show-home-graphic-header/key-art-01/4x1/"
@@ -25,21 +26,29 @@ urls = [
 
 pattern = re.compile(r"\.S01E(\d{2})")
 episodes = [(int(pattern.search(u).group(1)), u) for u in urls if pattern.search(u)]
-# although URLs já estão ordenadas, garantimos ordenação numérica:
 episodes.sort(key=lambda x: x[0])
 
-# Gera playlist M3U na raiz (playlist.m3u)
 with open("playlist.m3u", "w", encoding="utf-8") as f:
     f.write("#EXTM3U\n")
     f.write("#EXTENC:UTF-8\n")
     f.write("#PLAYLIST:O Estúdio\n")
     f.write(f"#EXTIMG:{poster_url}\n")
-    for num, u in episodes:
-        # captura URL direta com yt-dlp
-        res = subprocess.run(["yt-dlp", "-g", u], capture_output=True, text=True, check=True)
-        url_direct = res.stdout.strip()
+
+    for num, page_url in episodes:
+        # Fetch HTML e parse
+        resp = requests.get(page_url)
+        soup = BeautifulSoup(resp.text, "html.parser")
+        video_tag = soup.find("video", id="mainvideo")
+        if not video_tag or not video_tag.has_attr("src"):
+            print(f"Erro: tag video não encontrada em {page_url}")
+            continue
+        src = video_tag["src"].strip()
+        # garante prefixo https:
+        if src.startswith("//"):
+            src = "https:" + src
+
         f.write(
             f'#EXTINF:0 tvg-name="" audio-track="" tvg-logo="" '
             f'group-title="O Estúdio",S01E{num:02d}\n'
         )
-        f.write(url_direct + "\n")
+        f.write(src + "?stream=1\n")
