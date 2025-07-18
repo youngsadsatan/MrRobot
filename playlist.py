@@ -1,7 +1,6 @@
 # playlist.py
-import requests
-from bs4 import BeautifulSoup
 import re
+from yt_dlp import YoutubeDL
 
 # Série poster (header cover)
 poster_url = (
@@ -10,7 +9,7 @@ poster_url = (
     "Apple_TV_The_Studio_key_art_graphic_header_4_1_show_home.jpg.small_2x.jpg"
 )
 
-# URLs de Streamtape em ordem de E01 a E10
+# URLs de Streamtape (E01 a E10)
 urls = [
     "https://streamtape.com/v/j6LBmKO9kofLpz/O.Estudio.S01E01.mkv",
     "https://streamtape.com/v/1Wwd2mz9p1FbqM/O.Estudio.S01E02.mkv",
@@ -28,7 +27,14 @@ pattern = re.compile(r"\.S01E(\d{2})")
 episodes = [(int(pattern.search(u).group(1)), u) for u in urls if pattern.search(u)]
 episodes.sort(key=lambda x: x[0])
 
-headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+# Configuração do YTDLP
+ydl_opts = {
+    'quiet': True,
+    'skip_download': True,
+    'nocheckcertificate': True,
+    'extract_flat': False,
+    'format': 'best',
+}
 
 with open("playlist.m3u", "w", encoding="utf-8") as f:
     # Header Extended M3U
@@ -37,39 +43,24 @@ with open("playlist.m3u", "w", encoding="utf-8") as f:
     f.write("#PLAYLIST:O Estúdio\n")
     f.write(f"#EXTIMG:{poster_url}\n")
 
-    for num, page_url in episodes:
-        # Carrega página e extrai link via norobotlink
-        resp = requests.get(page_url, headers=headers)
-        soup = BeautifulSoup(resp.text, "html.parser")
-        link_tag = soup.find(id="norobotlink") or soup.find(id="captchalink")
-        if not link_tag:
-            print(f"Erro: não encontrou link em {page_url}")
-            continue
-        src = link_tag.get_text().strip()
+    with YoutubeDL(ydl_opts) as ydl:
+        for num, page_url in episodes:
+            try:
+                info = ydl.extract_info(page_url, download=False)
+            except Exception as e:
+                print(f"Erro YTDLP em {page_url}: {e}")
+                continue
 
-        # Normaliza URL
-        if src.startswith("//"):
-            src = "https:" + src
-        elif src.startswith("/"):
-            src = "https://streamtape.com" + src
-        elif not src.startswith("http"):
-            src = "https://" + src
+            # pega a URL direta
+            stream_url = info.get('url') or (info.get('formats') and info['formats'][0].get('url'))
+            if not stream_url:
+                print(f"Não encontrou stream em {page_url}")
+                continue
 
-        # Adiciona dl=1 se não existir
-        if "dl=1" not in src:
-            if "?" in src:
-                src += "&dl=1"
-            else:
-                src += "?dl=1"
+            # adiciona dl=1
+            if 'dl=1' not in stream_url:
+                sep = '&' if '?' in stream_url else '?'
+                stream_url += sep + 'dl=1'
 
-        # Resolve redirect para pegar o domínio tapecontent.net
-        try:
-            head = requests.head(src, headers=headers, allow_redirects=False)
-            location = head.headers.get("Location")
-            final_url = location if location else src
-        except requests.RequestException:
-            final_url = src
-
-        # Escreve o episódio
-        f.write(f"#EXTINF:0,O Estúdio S01E{num:02d}\n")
-        f.write(final_url + "\n")
+            f.write(f"#EXTINF:0,O Estúdio S01E{num:02d}\n")
+            f.write(stream_url + "\n")
