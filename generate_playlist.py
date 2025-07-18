@@ -31,17 +31,35 @@ for u in urls:
         episodes.append((int(m.group(1)), u))
 episodes.sort(key=lambda x: x[0])
 
-# Cria playlist M3U na raiz (playlist.m3u)
+# Abre playlist
 with open("playlist.m3u", "w", encoding="utf-8") as f:
     f.write("#EXTM3U\n")
     f.write("#EXTENC:UTF-8\n")
     f.write("#PLAYLIST:O Estúdio\n")
     f.write(f"#EXTIMG:{poster_url}\n")
+
     for num, u in episodes:
-        res = subprocess.run(["yt-dlp", "-g", u], capture_output=True, text=True, check=True)
-        url_direct = res.stdout.strip()
+        # tenta com yt-dlp
+        try:
+            res = subprocess.run(
+                ["yt-dlp", "-g", u],
+                capture_output=True, text=True, check=True
+            )
+            stream_url = res.stdout.strip()
+        except subprocess.CalledProcessError:
+            # fallback para streamlink
+            try:
+                res = subprocess.run(
+                    ["streamlink", "--stream-url", u, "best"],
+                    capture_output=True, text=True, check=True
+                )
+                stream_url = res.stdout.strip()
+            except subprocess.CalledProcessError as e:
+                print(f"ERRO ao extrair {u}: {e}")
+                continue
+
         f.write(
             f'#EXTINF:0 tvg-name="" audio-track="" tvg-logo="" '
             f'group-title="O Estúdio",S01E{num:02d}\n'
         )
-        f.write(url_direct + "\n")
+        f.write(stream_url + "\n")
