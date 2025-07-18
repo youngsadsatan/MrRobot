@@ -1,6 +1,6 @@
 # playlist.py
+import requests
 import re
-from yt_dlp import YoutubeDL
 
 # Série poster (header cover)
 poster_url = (
@@ -9,7 +9,7 @@ poster_url = (
     "Apple_TV_The_Studio_key_art_graphic_header_4_1_show_home.jpg.small_2x.jpg"
 )
 
-# URLs de Streamtape (E01 a E10)
+# URLs de Streamtape em ordem de E01 a E10
 urls = [
     "https://streamtape.com/v/j6LBmKO9kofLpz/O.Estudio.S01E01.mkv",
     "https://streamtape.com/v/1Wwd2mz9p1FbqM/O.Estudio.S01E02.mkv",
@@ -24,43 +24,29 @@ urls = [
 ]
 
 pattern = re.compile(r"\.S01E(\d{2})")
-episodes = [(int(pattern.search(u).group(1)), u) for u in urls if pattern.search(u)]
+episodes = [(int(pattern.search(u).group(1)), u) for u in urls]
 episodes.sort(key=lambda x: x[0])
 
-# Configuração do YTDLP
-ydl_opts = {
-    'quiet': True,
-    'skip_download': True,
-    'nocheckcertificate': True,
-    'extract_flat': False,
-    'format': 'best',
-}
+headers = {"User-Agent": "Mozilla/5.0"}
+# Busca URLs que contenham tapecontent.net e terminem com mp4?stream=1
+tape_re = re.compile(r"https?://[0-9A-Za-z\.]+\.tapecontent\.net/[^"]+\.mp4\?stream=1")
 
 with open("playlist.m3u", "w", encoding="utf-8") as f:
-    # Header Extended M3U
-    f.write("#EXTM3U\n")
-    f.write("#EXTENC:UTF-8\n")
-    f.write("#PLAYLIST:O Estúdio\n")
+    f.write("#EXTM3U\n#EXTENC:UTF-8\n#PLAYLIST:O Estúdio\n")
     f.write(f"#EXTIMG:{poster_url}\n")
 
-    with YoutubeDL(ydl_opts) as ydl:
-        for num, page_url in episodes:
-            try:
-                info = ydl.extract_info(page_url, download=False)
-            except Exception as e:
-                print(f"Erro YTDLP em {page_url}: {e}")
-                continue
+    for num, page_url in episodes:
+        try:
+            html = requests.get(page_url, headers=headers).text
+        except:
+            print(f"Erro fetch {page_url}")
+            continue
 
-            # pega a URL direta
-            stream_url = info.get('url') or (info.get('formats') and info['formats'][0].get('url'))
-            if not stream_url:
-                print(f"Não encontrou stream em {page_url}")
-                continue
-
-            # adiciona dl=1
-            if 'dl=1' not in stream_url:
-                sep = '&' if '?' in stream_url else '?'
-                stream_url += sep + 'dl=1'
-
-            f.write(f"#EXTINF:0,O Estúdio S01E{num:02d}\n")
-            f.write(stream_url + "\n")
+        m = tape_re.search(html)
+        if not m:
+            print(f"Erro: link tapecontent não encontrado em {page_url}")
+            continue
+        src = m.group()
+        
+        f.write(f"#EXTINF:0,O Estúdio S01E{num:02d}\n")
+        f.write(src + "\n")
