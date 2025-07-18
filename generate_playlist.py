@@ -9,7 +9,7 @@ poster_url = (
     "Apple_TV_The_Studio_key_art_graphic_header_4_1_show_home.jpg.small_2x.jpg"
 )
 
-# URLs de Streamtape em ordem
+# URLs de Streamtape em ordem de E01 a E10
 urls = [
     "https://streamtape.com/v/j6LBmKO9kofLpz/O.Estudio.S01E01.mkv",
     "https://streamtape.com/v/1Wwd2mz9p1FbqM/O.Estudio.S01E02.mkv",
@@ -24,42 +24,22 @@ urls = [
 ]
 
 pattern = re.compile(r"\.S01E(\d{2})")
-episodes = []
-for u in urls:
-    m = pattern.search(u)
-    if m:
-        episodes.append((int(m.group(1)), u))
+episodes = [(int(pattern.search(u).group(1)), u) for u in urls if pattern.search(u)]
+# although URLs já estão ordenadas, garantimos ordenação numérica:
 episodes.sort(key=lambda x: x[0])
 
-# Abre playlist
+# Gera playlist M3U na raiz (playlist.m3u)
 with open("playlist.m3u", "w", encoding="utf-8") as f:
     f.write("#EXTM3U\n")
     f.write("#EXTENC:UTF-8\n")
     f.write("#PLAYLIST:O Estúdio\n")
     f.write(f"#EXTIMG:{poster_url}\n")
-
     for num, u in episodes:
-        # tenta com yt-dlp
-        try:
-            res = subprocess.run(
-                ["yt-dlp", "-g", u],
-                capture_output=True, text=True, check=True
-            )
-            stream_url = res.stdout.strip()
-        except subprocess.CalledProcessError:
-            # fallback para streamlink
-            try:
-                res = subprocess.run(
-                    ["streamlink", "--stream-url", u, "best"],
-                    capture_output=True, text=True, check=True
-                )
-                stream_url = res.stdout.strip()
-            except subprocess.CalledProcessError as e:
-                print(f"ERRO ao extrair {u}: {e}")
-                continue
-
+        # captura URL direta com yt-dlp
+        res = subprocess.run(["yt-dlp", "-g", u], capture_output=True, text=True, check=True)
+        url_direct = res.stdout.strip()
         f.write(
             f'#EXTINF:0 tvg-name="" audio-track="" tvg-logo="" '
             f'group-title="O Estúdio",S01E{num:02d}\n'
         )
-        f.write(stream_url + "\n")
+        f.write(url_direct + "\n")
