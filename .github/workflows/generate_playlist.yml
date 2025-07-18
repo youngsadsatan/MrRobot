@@ -1,4 +1,4 @@
-# playlist.yml
+# .github/workflows/playlist.yml
 name: Playlist
 
 on:
@@ -20,12 +20,12 @@ jobs:
           python-version: '3.x'
 
       - name: Install dependencies
-        run: pip install streamlink yt-dlp
+        run: pip install yt-dlp
 
       - name: Generate playlist
-        run: python generate_playlist.py
+        run: python playlist.py
 
-      - name: Prepare pages output
+      - name: Prepare Pages output
         run: |
           mkdir -p public
           mv playlist.m3u public/playlist.m3u
