@@ -20,7 +20,7 @@ jobs:
           python-version: '3.x'
 
       - name: Install dependencies
-        run: pip install requests beautifulsoup4
+        run: pip install yt-dlp
 
       - name: Generate playlist
         run: python playlist.py
