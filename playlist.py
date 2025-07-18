@@ -29,7 +29,7 @@ episodes.sort(key=lambda x: x[0])
 
 headers = {"User-Agent": "Mozilla/5.0"}
 # Busca URLs que contenham tapecontent.net e terminem com mp4?stream=1
-tape_re = re.compile(r"https?://[0-9A-Za-z\.]+\.tapecontent\.net/[^"]+\.mp4\?stream=1")
+tape_re = re.compile(r'https?://[0-9A-Za-z\.]+\.tapecontent\.net/[^" ]+\.mp4\?stream=1')
 
 with open("playlist.m3u", "w", encoding="utf-8") as f:
     f.write("#EXTM3U\n#EXTENC:UTF-8\n#PLAYLIST:O Estúdio\n")
@@ -38,7 +38,7 @@ with open("playlist.m3u", "w", encoding="utf-8") as f:
     for num, page_url in episodes:
         try:
             html = requests.get(page_url, headers=headers).text
-        except:
+        except Exception:
             print(f"Erro fetch {page_url}")
             continue
 
@@ -47,6 +47,10 @@ with open("playlist.m3u", "w", encoding="utf-8") as f:
             print(f"Erro: link tapecontent não encontrado em {page_url}")
             continue
         src = m.group()
-        
+
+        # Adiciona dl=1 se faltante
+        if 'dl=1' not in src:
+            src += '&dl=1'
+
         f.write(f"#EXTINF:0,O Estúdio S01E{num:02d}\n")
         f.write(src + "\n")
