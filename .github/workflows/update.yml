@@ -25,13 +25,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          playwright install --with-deps
 
-      - name: Save cookies secret
+      - name: Save cookies secret (opcional)
         run: echo "${{ secrets.VISIONCINE_COOKIES }}" > cookies.txt
 
       - name: Generate playlist
-        env:
-          VISIONCINE_COOKIES: ${{ secrets.VISIONCINE_COOKIES }}
         run: python playlist.py
 
       - name: Prepare Pages directory
