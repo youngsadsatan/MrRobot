@@ -1,36 +1,34 @@
 # playlist.py
 import os
+import time
 import random
 import re
 import requests
-from bs4 import BeautifulSoup
 
 OUTPUT_FILE = "playlist.m3u"
 
-# 1) parse cookies from env secret
+# --- 1) Cookies do Secret GitHub ---
 raw = os.environ.get("VISIONCINE_COOKIES", "")
 cookies = {}
 for line in raw.splitlines():
-    line = line.strip()
     if not line or line.startswith("#"):
         continue
     parts = line.split("\t")
     if len(parts) >= 7:
         cookies[parts[5]] = parts[6]
 
-# 2) Brazilian HTTP proxies only (remove SOCKS4 to avoid missing deps)
+# --- 2) Proxies HTTP confiáveis ou vazio para fallback ---
 PROXIES = [
     "http://45.227.195.121:8082",
     "http://200.34.227.28:8080",
     "http://200.159.143.38:8080",
 ]
-proxy_url = random.choice(PROXIES)
-proxies = {"http": proxy_url, "https": proxy_url}
+def get_random_proxy():
+    return {"http": p, "https": p} if (p := random.choice(PROXIES)) else {}
 
-# 3) setup session
+# --- 3) Sessão com cookies e headers ---
 session = requests.Session()
 session.cookies.update(cookies)
-session.proxies.update(proxies)
 session.verify = False
 session.headers.update({
     "User-Agent":      "Mozilla/5.0 (Android 15; Mobile; rv:143.0) Gecko/143.0 Firefox/143.0",
@@ -42,11 +40,41 @@ session.headers.update({
     "Upgrade-Insecure-Requests": "1",
 })
 
-# warm-up request
-session.get("http://www.playcinevs.info")
+def extract_video_url(page_url):
+    """
+    Tenta extrair o token/video diretamente via regex do HTML bruto.
+    """
+    # Primeiro, tente com proxy
+    for attempt in (get_random_proxy(), {}):
+        try:
+            resp = session.get(page_url,
+                               headers={"Referer": "http://www.playcinevs.info"},
+                               proxies=attempt,
+                               timeout=5)
+            resp.raise_for_status()
+            html = resp.text
+            break
+        except Exception as e:
+            last_err = e
+    else:
+        # se esgotou tentativas
+        raise last_err
 
-# fill this with your episodes
-EPISODES = [
+    # Procurar initializePlayer('URL', ...) primeiro
+    m = re.search(r"initializePlayer\(['\"](https?://[^'\"]+)['\"]", html)
+    if m:
+        return m.group(1)
+
+    # Tentar <video src="...">
+    m2 = re.search(r'<video[^>]+src=["\']([^"\']+)["\']', html)
+    if m2:
+        return m2.group(1)
+
+    raise RuntimeError(f"Vídeo não encontrado em {page_url}")
+
+def main():
+    # única definição de EPISODES
+    EPISODES = [
     ("S01E01", "http://www.playcinevs.info/s/116734"),
     ("S01E02", "http://www.playcinevs.info/s/116735"),
     ("S01E03", "http://www.playcinevs.info/s/116736"),
@@ -264,34 +292,21 @@ EPISODES = [
     ("S09E23", "http://www.playcinevs.info/s/175567"),
     ("S09E24", "http://www.playcinevs.info/s/175568"),
 ]
+    n = len(EPISODES)
+    print(f"Iniciando extração de {n} episódios (timeout 5s)...")
+    start = time.time()
 
-def extract_video_url(page_url):
-    resp = session.get(page_url, headers={"Referer": "http://www.playcinevs.info"}, timeout=15)
-    resp.raise_for_status()
-    html = resp.text
-
-    soup = BeautifulSoup(html, "html.parser")
-    video = soup.find("video", src=True)
-    if video:
-        return video["src"]
-
-    m = re.search(r"initializePlayer\(['\"](https?://[^'\"]+)['\"]", html)
-    if m:
-        return m.group(1)
-
-    raise RuntimeError(f"Video URL not found on page: {page_url}")
-
-def main():
-    print(f"Processing {len(EPISODES)} episodes…")
     with open(OUTPUT_FILE, "w") as f:
         f.write("#EXTM3U\n")
-        for label, url in EPISODES:
+        for i, (label, url) in enumerate(EPISODES, 1):
             try:
                 mp4 = extract_video_url(url)
                 f.write(f"#EXTINF:-1,{label}\n{mp4}\n")
-                print(f"Added {label}")
+                print(f"[{i}/{n}] OK {label}")
             except Exception as e:
-                print(f"Error {label}: {e}")
+                print(f"[{i}/{n}] ERRO {label}: {e}")
+
+    print(f"Concluído em {time.time() - start:.1f}s")
 
 if __name__ == "__main__":
     main()
