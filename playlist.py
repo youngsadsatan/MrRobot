@@ -223,13 +223,21 @@ EPISODES = [
 
 OUTPUT_FILE = "playlist.m3u"
 
+# Create a session with headers to avoid 403
+session = requests.Session()
+session.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                      " (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36",
+})
 
 def extract_video_url(page_url):
     """
-    Fetches the page and extracts the direct video URL from <video src=>
-    or from initializePlayer() call.
+    Fetches the page with proper headers and extracts the direct video URL
+    from <video src=> or from initializePlayer() call.
     """
-    resp = requests.get(page_url)
+    # include referer header per request
+    headers = {"Referer": page_url}
+    resp = session.get(page_url, headers=headers)
     resp.raise_for_status()
     html = resp.text
 
@@ -250,12 +258,15 @@ def extract_video_url(page_url):
 
 def main():
     with open(OUTPUT_FILE, "w") as f:
-        f.write("#EXTM3U\n")
+        f.write("#EXTM3U
+")
         for label, url in EPISODES:
             try:
                 video_url = extract_video_url(url)
-                f.write(f"#EXTINF:-1,{label}\n")
-                f.write(video_url + "\n")
+                f.write(f"#EXTINF:-1,{label}
+")
+                f.write(video_url + "
+")
                 print(f"Added {label}: {video_url}")
             except Exception as e:
                 print(f"Error processing {label}: {e}")
