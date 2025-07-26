@@ -4,7 +4,33 @@ import time
 from playwright.sync_api import sync_playwright
 
 OUTPUT_FILE = "playlist.m3u"
+COOKIES_FILE = "cookies.txt"
 
+# --- 1) Carrega cookies Netscape (GitHub Secret) e converte para Playwright ---
+raw = os.environ.get("VISIONCINE_COOKIES", "")
+with open(COOKIES_FILE, "w") as f:
+    f.write(raw.strip())
+
+def load_playwright_cookies(raw_text):
+    cookies = []
+    for line in raw_text.splitlines():
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) >= 7:
+            domain, _, path, secure, _, name, value = parts
+            cookies.append({
+                "name": name,
+                "value": value,
+                "domain": domain.lstrip("."),
+                "path": path,
+                "httpOnly": False,
+                "secure": secure.upper() == "TRUE",
+                "sameSite": "Lax"
+            })
+    return cookies
+
+# --- 2) Lista de episódios ---
 EPISODES = [
     ("S01E01", "http://www.playcinevs.info/s/116734"),
     ("S01E02", "http://www.playcinevs.info/s/116735"),
@@ -225,14 +251,28 @@ EPISODES = [
 ]
 
 def main():
-    print(f"Iniciando extração de {len(EPISODES)} episódios com Playwright...")
+    print(f"Iniciando extração de {len(EPISODES)} episódios com Playwright + cookies...")
     start = time.time()
 
+    raw_cookies = os.environ.get("VISIONCINE_COOKIES", "")
+    pw_cookies = load_playwright_cookies(raw_cookies)
+
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-blink-features=AutomationControlled"
+            ]
         )
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                       "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36",
+            locale="pt-BR"
+        )
+        # injeta os cookies antes de navegar
+        context.add_cookies(pw_cookies)
         page = context.new_page()
 
         with open(OUTPUT_FILE, "w") as f:
@@ -240,9 +280,25 @@ def main():
 
             for i, (label, url) in enumerate(EPISODES, 1):
                 try:
-                    page.goto(url, timeout=30000)
-                    page.wait_for_selector("video[src]", timeout=10000)
-                    video_src = page.query_selector("video[src]").get_attribute("src")
+                    page.goto(url, timeout=60000)
+                    # aguarda o initializePlayer injetar o vídeo ou a tag <video>
+                    page.wait_for_function(
+                        "!!document.querySelector('video[src]') || "
+                        "typeof jwplayer !== 'undefined' && jwplayer().getPlaylist().length > 0",
+                        timeout=20000
+                    )
+                    # melhor extrair via API do JWPlayer
+                    video_src = page.evaluate(
+                        "(() => {"
+                        "  if (typeof jwplayer !== 'undefined') {"
+                        "    return jwplayer().getPlaylist()[0].file;"
+                        "  }"
+                        "  const v = document.querySelector('video[src]');"
+                        "  return v && v.src;"
+                        "})()"
+                    )
+                    if not video_src:
+                        raise RuntimeError("nenhum vídeo encontrado no DOM")
                     f.write(f"#EXTINF:-1,{label}\n{video_src}\n")
                     print(f"[{i}/{len(EPISODES)}] OK {label}")
                 except Exception as e:
