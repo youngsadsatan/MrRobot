@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install yt-dlp
+          pip install -r requirements.txt
 
       - name: Save cookies secret
         run: echo "${{ secrets.VISIONCINE_COOKIES }}" > cookies.txt
