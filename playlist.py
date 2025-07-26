@@ -5,7 +5,53 @@ import re
 import requests
 from bs4 import BeautifulSoup
 
-# List of episodes with labels and URLs
+OUTPUT_FILE = "playlist.m3u"
+
+# --- 1) parse cookies from env secret VISIONCINE_COOKIES (Netscape format) ---
+raw = os.environ.get("VISIONCINE_COOKIES", "")
+cookies = {}
+for line in raw.splitlines():
+    line = line.strip()
+    if not line or line.startswith("#"):
+        continue
+    parts = line.split("\t")
+    if len(parts) >= 7:
+        name = parts[5]
+        value = parts[6]
+        cookies[name] = value
+
+# --- 2) optional list of Brazilian proxies (HTTP/SOCKS4) ---
+PROXIES = [
+    "socks4://189.39.118.210:5678",
+    "socks4://138.186.222.129:5678",
+    "http://45.227.195.121:8082",
+    "http://200.34.227.28:8080",
+    # add more as needed...
+]
+
+# choose one proxy at random
+proxy_url = random.choice(PROXIES)
+proxies = {"http": proxy_url, "https": proxy_url}
+
+# --- 3) setup session ---
+session = requests.Session()
+session.cookies.update(cookies)
+session.proxies.update(proxies)
+session.verify = False
+session.headers.update({
+    "User-Agent":      "Mozilla/5.0 (Android 15; Mobile; rv:143.0) Gecko/143.0 Firefox/143.0",
+    "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8",
+    "Referer":         "http://www.playcinevs.info/",
+    "Origin":          "http://www.playcinevs.info",
+    "Connection":      "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+})
+
+# warm-up request to set any challenge cookies
+session.get("http://www.playcinevs.info")
+
+# EPISODES must be filled by user:
 EPISODES = [
     ("S01E01", "http://www.playcinevs.info/s/116734"),
     ("S01E02", "http://www.playcinevs.info/s/116735"),
@@ -223,57 +269,6 @@ EPISODES = [
     ("S09E22", "http://www.playcinevs.info/s/175566"),
     ("S09E23", "http://www.playcinevs.info/s/175567"),
     ("S09E24", "http://www.playcinevs.info/s/175568"),
-]
-
-OUTPUT_FILE = "playlist.m3u"
-
-# --- 1) parse cookies from env secret VISIONCINE_COOKIES (Netscape format) ---
-raw = os.environ.get("VISIONCINE_COOKIES", "")
-cookies = {}
-for line in raw.splitlines():
-    line = line.strip()
-    if not line or line.startswith("#"):
-        continue
-    parts = line.split("\t")
-    if len(parts) >= 7:
-        name = parts[5]
-        value = parts[6]
-        cookies[name] = value
-
-# --- 2) optional list of Brazilian proxies (HTTP/SOCKS4) ---
-PROXIES = [
-    "socks4://189.39.118.210:5678",
-    "socks4://138.186.222.129:5678",
-    "http://45.227.195.121:8082",
-    "http://200.34.227.28:8080",
-    # add more as needed...
-]
-
-# choose one proxy at random
-proxy_url = random.choice(PROXIES)
-proxies = {"http": proxy_url, "https": proxy_url}
-
-# --- 3) setup session ---
-session = requests.Session()
-session.cookies.update(cookies)
-session.proxies.update(proxies)
-session.verify = False
-session.headers.update({
-    "User-Agent":      "Mozilla/5.0 (Android 15; Mobile; rv:143.0) Gecko/143.0 Firefox/143.0",
-    "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8",
-    "Referer":         "http://www.playcinevs.info/",
-    "Origin":          "http://www.playcinevs.info",
-    "Connection":      "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-})
-
-# warm-up request to set any challenge cookies
-session.get("http://www.playcinevs.info")
-
-# EPISODES must be filled by user:
-EPISODES = [
-    # ("S01E01", "http://..."), ...
 ]
 
 def extract_video_url(page_url):
