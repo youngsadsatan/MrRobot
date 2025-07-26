@@ -1,35 +1,10 @@
 # playlist.py
 import os
-import json
 import time
-import re
-import subprocess
-import requests
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from playwright.sync_api import sync_playwright
 
 OUTPUT_FILE = "playlist.m3u"
-COOKIES_FILE = "cookies.txt"
 
-# --- Cookies do GitHub Secrets ---
-raw = os.environ.get("VISIONCINE_COOKIES", "")
-with open(COOKIES_FILE, "w") as f:
-    f.write(raw.strip())
-
-# --- Sessão requests com cookies e headers padrão ---
-session = requests.Session()
-session.headers.update({
-    "User-Agent": "Mozilla/5.0",
-    "Referer": "http://www.playcinevs.info/"
-})
-session.verify = False
-with open(COOKIES_FILE, "r") as f:
-    for line in f:
-        if not line.strip().startswith("#") and "\t" in line:
-            parts = line.strip().split("\t")
-            if len(parts) >= 7:
-                session.cookies.set(parts[5], parts[6])
-
-# --- Lista de episódios ---
 EPISODES = [
     ("S01E01", "http://www.playcinevs.info/s/116734"),
     ("S01E02", "http://www.playcinevs.info/s/116735"),
@@ -249,67 +224,34 @@ EPISODES = [
     ("S09E24", "http://www.playcinevs.info/s/175568"),
 ]
 
-# --- yt-dlp extractor ---
-def extract_with_ytdlp(label, page_url):
-    try:
-        result = subprocess.check_output([
-            "yt-dlp",
-            "--cookies", COOKIES_FILE,
-            "--skip-download",
-            "--no-warnings",
-            "--print-json",
-            page_url
-        ], stderr=subprocess.DEVNULL, timeout=15)
-
-        data = json.loads(result)
-        return (label, data["url"])
-    except Exception:
-        return None
-
-# --- Regex fallback extractor ---
-def extract_with_regex(label, page_url):
-    try:
-        resp = session.get(page_url, timeout=10)
-        html = resp.text
-        m = re.search(r"initializePlayer\(['\"](https?://[^'\"]+)['\"]", html)
-        if m:
-            return (label, m.group(1))
-        m2 = re.search(r'<video[^>]+src=["\']([^"\']+)["\']', html)
-        if m2:
-            return (label, m2.group(1))
-        return (label, None)
-    except Exception as e:
-        return (label, None)
-
-# --- Main ---
 def main():
-    print(f"Iniciando extração de {len(EPISODES)} episódios com yt-dlp + fallback...")
-
+    print(f"Iniciando extração de {len(EPISODES)} episódios com Playwright...")
     start = time.time()
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        futures = {}
-        for label, url in EPISODES:
-            futures[executor.submit(extract_with_ytdlp, label, url)] = (label, url)
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        )
+        page = context.new_page()
 
         with open(OUTPUT_FILE, "w") as f:
             f.write("#EXTM3U\n")
 
-            for future in as_completed(futures):
-                label, url = futures[future]
-                result = future.result()
+            for i, (label, url) in enumerate(EPISODES, 1):
+                try:
+                    page.goto(url, timeout=30000)
+                    page.wait_for_selector("video[src]", timeout=10000)
+                    video_src = page.query_selector("video[src]").get_attribute("src")
+                    f.write(f"#EXTINF:-1,{label}\n{video_src}\n")
+                    print(f"[{i}/{len(EPISODES)}] OK {label}")
+                except Exception as e:
+                    print(f"[{i}/{len(EPISODES)}] ERRO {label}: {e}")
 
-                if result:
-                    f.write(f"#EXTINF:-1,{label}\n{result[1]}\n")
-                    print(f"[✓] OK {label} (yt-dlp)")
-                else:
-                    label, final_url = extract_with_regex(label, url)
-                    if final_url:
-                        f.write(f"#EXTINF:-1,{label}\n{final_url}\n")
-                        print(f"[✓] OK {label} (regex)")
-                    else:
-                        print(f"[x] ERRO {label}: nada extraído")
+        browser.close()
 
     print(f"Concluído em {time.time() - start:.1f}s")
+
 
 if __name__ == "__main__":
     main()
