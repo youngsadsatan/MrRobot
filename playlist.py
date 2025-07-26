@@ -1,3 +1,7 @@
+# playlist.py
+import os
+import random
+import re
 import requests
 from bs4 import BeautifulSoup
 
@@ -223,39 +227,67 @@ EPISODES = [
 
 OUTPUT_FILE = "playlist.m3u"
 
-# Create a session with headers to avoid 403
+# --- 1) parse cookies from env secret VISIONCINE_COOKIES (Netscape format) ---
+raw = os.environ.get("VISIONCINE_COOKIES", "")
+cookies = {}
+for line in raw.splitlines():
+    line = line.strip()
+    if not line or line.startswith("#"):
+        continue
+    parts = line.split("\t")
+    if len(parts) >= 7:
+        name = parts[5]
+        value = parts[6]
+        cookies[name] = value
+
+# --- 2) optional list of Brazilian proxies (HTTP/SOCKS4) ---
+PROXIES = [
+    "socks4://189.39.118.210:5678",
+    "socks4://138.186.222.129:5678",
+    "http://45.227.195.121:8082",
+    "http://200.34.227.28:8080",
+    # add more as needed...
+]
+
+# choose one proxy at random
+proxy_url = random.choice(PROXIES)
+proxies = {"http": proxy_url, "https": proxy_url}
+
+# --- 3) setup session ---
 session = requests.Session()
+session.cookies.update(cookies)
+session.proxies.update(proxies)
+session.verify = False
 session.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                  " (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.5",
-    "Accept-Encoding": "gzip, deflate",
-    "Connection": "keep-alive",
+    "User-Agent":      "Mozilla/5.0 (Android 15; Mobile; rv:143.0) Gecko/143.0 Firefox/143.0",
+    "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8",
+    "Referer":         "http://www.playcinevs.info/",
+    "Origin":          "http://www.playcinevs.info",
+    "Connection":      "keep-alive",
     "Upgrade-Insecure-Requests": "1",
 })
-# Primeira requisição para obter cookies
-session.get("http://www.playcinevs.info", verify=False)
+
+# warm-up request to set any challenge cookies
+session.get("http://www.playcinevs.info")
+
+# EPISODES must be filled by user:
+EPISODES = [
+    # ("S01E01", "http://..."), ...
+]
 
 def extract_video_url(page_url):
-    """
-    Fetches the page with proper headers and extracts the direct video URL
-    from <video src=> or from initializePlayer() call.
-    """
-    # use main site as referer
-    headers = {"Referer": "http://www.playcinevs.info"}
-    resp = session.get(page_url, headers=headers, verify=False)
+    resp = session.get(page_url, headers={"Referer": "http://www.playcinevs.info"}, timeout=15)
     resp.raise_for_status()
     html = resp.text
 
-    # Try to parse <video src>
+    # try <video src=...>
     soup = BeautifulSoup(html, "html.parser")
     video = soup.find("video", src=True)
     if video:
         return video["src"]
 
-    # Fallback: look for initializePlayer('URL', ...)
-    import re
+    # fallback to initializePlayer(...)
     m = re.search(r"initializePlayer\(['\"](https?://[^'\"]+)['\"]", html)
     if m:
         return m.group(1)
@@ -267,12 +299,11 @@ def main():
         f.write("#EXTM3U\n")
         for label, url in EPISODES:
             try:
-                video_url = extract_video_url(url)
-                f.write(f"#EXTINF:-1,{label}\n")
-                f.write(video_url + "\n")
-                print(f"Added {label}: {video_url}")
+                url_mp4 = extract_video_url(url)
+                f.write(f"#EXTINF:-1,{label}\n{url_mp4}\n")
+                print(f"Added {label}")
             except Exception as e:
-                print(f"Error processing {label}: {e}")
+                print(f"Error {label}: {e}")
 
 if __name__ == "__main__":
     main()
