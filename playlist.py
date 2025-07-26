@@ -227,7 +227,7 @@ OUTPUT_FILE = "playlist.m3u"
 session = requests.Session()
 session.headers.update({
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                      " (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36",
+                  " (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36",
 })
 
 def extract_video_url(page_url):
@@ -255,22 +255,17 @@ def extract_video_url(page_url):
 
     raise RuntimeError(f"Video URL not found on page: {page_url}")
 
-
 def main():
     with open(OUTPUT_FILE, "w") as f:
-        f.write("#EXTM3U
-")
+        f.write("#EXTM3U\n")
         for label, url in EPISODES:
             try:
                 video_url = extract_video_url(url)
-                f.write(f"#EXTINF:-1,{label}
-")
-                f.write(video_url + "
-")
+                f.write(f"#EXTINF:-1,{label}\n")
+                f.write(video_url + "\n")
                 print(f"Added {label}: {video_url}")
             except Exception as e:
                 print(f"Error processing {label}: {e}")
-
 
 if __name__ == "__main__":
     main()
