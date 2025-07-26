@@ -1,80 +1,20 @@
 # playlist.py
 import os
+import json
 import time
-import random
-import re
-import requests
+import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 OUTPUT_FILE = "playlist.m3u"
+COOKIES_FILE = "cookies.txt"
 
-# --- 1) Cookies do Secret GitHub ---
+# --- Carregar cookies do Secret ---
 raw = os.environ.get("VISIONCINE_COOKIES", "")
-cookies = {}
-for line in raw.splitlines():
-    if not line or line.startswith("#"):
-        continue
-    parts = line.split("\t")
-    if len(parts) >= 7:
-        cookies[parts[5]] = parts[6]
+with open(COOKIES_FILE, "w") as f:
+    f.write(raw.strip())
 
-# --- 2) Proxies HTTP confiáveis ou vazio para fallback ---
-PROXIES = [
-    "http://45.227.195.121:8082",
-    "http://200.34.227.28:8080",
-    "http://200.159.143.38:8080",
-]
-def get_random_proxy():
-    return {"http": p, "https": p} if (p := random.choice(PROXIES)) else {}
-
-# --- 3) Sessão com cookies e headers ---
-session = requests.Session()
-session.cookies.update(cookies)
-session.verify = False
-session.headers.update({
-    "User-Agent":      "Mozilla/5.0 (Android 15; Mobile; rv:143.0) Gecko/143.0 Firefox/143.0",
-    "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8",
-    "Referer":         "http://www.playcinevs.info/",
-    "Origin":          "http://www.playcinevs.info",
-    "Connection":      "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-})
-
-def extract_video_url(page_url):
-    """
-    Tenta extrair o token/video diretamente via regex do HTML bruto.
-    """
-    # Primeiro, tente com proxy
-    for attempt in (get_random_proxy(), {}):
-        try:
-            resp = session.get(page_url,
-                               headers={"Referer": "http://www.playcinevs.info"},
-                               proxies=attempt,
-                               timeout=5)
-            resp.raise_for_status()
-            html = resp.text
-            break
-        except Exception as e:
-            last_err = e
-    else:
-        # se esgotou tentativas
-        raise last_err
-
-    # Procurar initializePlayer('URL', ...) primeiro
-    m = re.search(r"initializePlayer\(['\"](https?://[^'\"]+)['\"]", html)
-    if m:
-        return m.group(1)
-
-    # Tentar <video src="...">
-    m2 = re.search(r'<video[^>]+src=["\']([^"\']+)["\']', html)
-    if m2:
-        return m2.group(1)
-
-    raise RuntimeError(f"Vídeo não encontrado em {page_url}")
-
-def main():
-    # única definição de EPISODES
-    EPISODES = [
+# --- Lista de episódios (label, URL página) ---
+EPISODES = [
     ("S01E01", "http://www.playcinevs.info/s/116734"),
     ("S01E02", "http://www.playcinevs.info/s/116735"),
     ("S01E03", "http://www.playcinevs.info/s/116736"),
@@ -292,19 +232,48 @@ def main():
     ("S09E23", "http://www.playcinevs.info/s/175567"),
     ("S09E24", "http://www.playcinevs.info/s/175568"),
 ]
-    n = len(EPISODES)
-    print(f"Iniciando extração de {n} episódios (timeout 5s)...")
-    start = time.time()
 
-    with open(OUTPUT_FILE, "w") as f:
-        f.write("#EXTM3U\n")
-        for i, (label, url) in enumerate(EPISODES, 1):
-            try:
-                mp4 = extract_video_url(url)
-                f.write(f"#EXTINF:-1,{label}\n{mp4}\n")
-                print(f"[{i}/{n}] OK {label}")
-            except Exception as e:
-                print(f"[{i}/{n}] ERRO {label}: {e}")
+# --- Função que extrai com yt-dlp ---
+def extract_with_ytdlp(label, page_url):
+    try:
+        result = subprocess.check_output([
+            "yt-dlp",
+            "--cookies", COOKIES_FILE,
+            "--skip-download",
+            "--no-warnings",
+            "--print-json",
+            page_url
+        ], stderr=subprocess.DEVNULL, timeout=15)
+
+        data = json.loads(result)
+        return (label, data["url"])
+
+    except Exception as e:
+        return (label, None, str(e))
+
+# --- Main ---
+def main():
+    print(f"Iniciando extração de {len(EPISODES)} episódios com yt-dlp...")
+
+    start = time.time()
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {
+            executor.submit(extract_with_ytdlp, label, url): label
+            for label, url in EPISODES
+        }
+
+        with open(OUTPUT_FILE, "w") as f:
+            f.write("#EXTM3U\n")
+
+            for future in as_completed(futures):
+                result = future.result()
+                if len(result) == 2:
+                    label, url = result
+                    f.write(f"#EXTINF:-1,{label}\n{url}\n")
+                    print(f"[✓] OK {label}")
+                else:
+                    label, _, error = result
+                    print(f"[x] ERRO {label}: {error}")
 
     print(f"Concluído em {time.time() - start:.1f}s")
 
