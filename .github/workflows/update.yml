@@ -23,9 +23,14 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install requests beautifulsoup4
+
+      - name: Write cookies secret to file (for local inspection)
+        run: echo "${{ secrets.VISIONCINE_COOKIES }}" > cookies.txt
 
       - name: Generate playlist
+        env:
+          VISIONCINE_COOKIES: ${{ secrets.VISIONCINE_COOKIES }}
         run: python playlist.py
 
       - name: Prepare Pages directory
