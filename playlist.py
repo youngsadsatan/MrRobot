@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 
 OUTPUT_FILE = "playlist.m3u"
 
-# --- 1) parse cookies from env secret VISIONCINE_COOKIES (Netscape format) ---
+# 1) parse cookies from env secret
 raw = os.environ.get("VISIONCINE_COOKIES", "")
 cookies = {}
 for line in raw.splitlines():
@@ -16,24 +16,18 @@ for line in raw.splitlines():
         continue
     parts = line.split("\t")
     if len(parts) >= 7:
-        name = parts[5]
-        value = parts[6]
-        cookies[name] = value
+        cookies[parts[5]] = parts[6]
 
-# --- 2) optional list of Brazilian proxies (HTTP/SOCKS4) ---
+# 2) Brazilian HTTP proxies only (remove SOCKS4 to avoid missing deps)
 PROXIES = [
-    "socks4://189.39.118.210:5678",
-    "socks4://138.186.222.129:5678",
     "http://45.227.195.121:8082",
     "http://200.34.227.28:8080",
-    # add more as needed...
+    "http://200.159.143.38:8080",
 ]
-
-# choose one proxy at random
 proxy_url = random.choice(PROXIES)
 proxies = {"http": proxy_url, "https": proxy_url}
 
-# --- 3) setup session ---
+# 3) setup session
 session = requests.Session()
 session.cookies.update(cookies)
 session.proxies.update(proxies)
@@ -48,10 +42,10 @@ session.headers.update({
     "Upgrade-Insecure-Requests": "1",
 })
 
-# warm-up request to set any challenge cookies
+# warm-up request
 session.get("http://www.playcinevs.info")
 
-# EPISODES must be filled by user:
+# fill this with your episodes
 EPISODES = [
     ("S01E01", "http://www.playcinevs.info/s/116734"),
     ("S01E02", "http://www.playcinevs.info/s/116735"),
@@ -276,13 +270,11 @@ def extract_video_url(page_url):
     resp.raise_for_status()
     html = resp.text
 
-    # try <video src=...>
     soup = BeautifulSoup(html, "html.parser")
     video = soup.find("video", src=True)
     if video:
         return video["src"]
 
-    # fallback to initializePlayer(...)
     m = re.search(r"initializePlayer\(['\"](https?://[^'\"]+)['\"]", html)
     if m:
         return m.group(1)
@@ -290,12 +282,13 @@ def extract_video_url(page_url):
     raise RuntimeError(f"Video URL not found on page: {page_url}")
 
 def main():
+    print(f"Processing {len(EPISODES)} episodes…")
     with open(OUTPUT_FILE, "w") as f:
         f.write("#EXTM3U\n")
         for label, url in EPISODES:
             try:
-                url_mp4 = extract_video_url(url)
-                f.write(f"#EXTINF:-1,{label}\n{url_mp4}\n")
+                mp4 = extract_video_url(url)
+                f.write(f"#EXTINF:-1,{label}\n{mp4}\n")
                 print(f"Added {label}")
             except Exception as e:
                 print(f"Error {label}: {e}")
