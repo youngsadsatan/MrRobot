@@ -228,16 +228,23 @@ session = requests.Session()
 session.headers.update({
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
                   " (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Accept-Encoding": "gzip, deflate",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
 })
+# Primeira requisição para obter cookies
+session.get("http://www.playcinevs.info", verify=False)
 
 def extract_video_url(page_url):
     """
     Fetches the page with proper headers and extracts the direct video URL
     from <video src=> or from initializePlayer() call.
     """
-    # include referer header per request
-    headers = {"Referer": page_url}
-    resp = session.get(page_url, headers=headers)
+    # use main site as referer
+    headers = {"Referer": "http://www.playcinevs.info"}
+    resp = session.get(page_url, headers=headers, verify=False)
     resp.raise_for_status()
     html = resp.text
 
