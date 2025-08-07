@@ -23,7 +23,10 @@ const sharp = require('sharp');
   const emails = fs.readFileSync(path.resolve(__dirname, 'emails.txt'), 'utf-8')
                    .split(/\r?\n/).filter(Boolean);
 
-  const browser = await puppeteer.launch({ headless: true });
+  const browser = await puppeteer.launch({
+    headless: "new",
+    args: ['--no-sandbox','--disable-setuid-sandbox']
+  });
   const page = await browser.newPage();
   await page.goto(SITE, { waitUntil: 'networkidle2' });
 
