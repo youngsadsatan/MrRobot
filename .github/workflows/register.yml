@@ -24,7 +24,7 @@ jobs:
         working-directory: ./automation
 
       - name: Run bulk register
-        run: node create_account.js
+        run: node account.js
         working-directory: ./automation
 
       - name: Upload log
