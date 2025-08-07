@@ -19,9 +19,11 @@ const sharp = require('sharp');
   // inicia log
   fs.writeFileSync(LOG_PATH, '', 'utf-8');
 
-  // carrega e-mails
+  // carrega e-mails, removendo linhas vazias e comentários que começam com #
   const emails = fs.readFileSync(path.resolve(__dirname, 'emails.txt'), 'utf-8')
-                   .split(/\r?\n/).filter(Boolean);
+                   .split(/\r?\n/)
+                   .map(l => l.trim())
+                   .filter(l => l && !l.startsWith('#'));
 
   const browser = await puppeteer.launch({
     headless: "new",
@@ -57,9 +59,10 @@ const sharp = require('sharp');
       if (code.length !== 4) throw new Error('len');
     } catch {
       console.log(`⚠️ OCR falhou para ${email}, recarregando captcha`);
-      await page.click('form img');             // recarrega o captcha clicando na imagem
-      await page.waitForTimeout(800);
-      continue; // tenta mesmo e-mail com novo captcha
+      await page.click('form img');
+      // aguarda 800ms
+      await new Promise(r => setTimeout(r, 800));
+      continue; // repete o mesmo email com novo captcha
     }
     await page.type('input[name="captcha"]', code);
 
@@ -75,7 +78,7 @@ const sharp = require('sharp');
       fs.appendFileSync(LOG_PATH, `🔴 ${email}\n`);
       // recarrega apenas o captcha
       await page.click('form img');
-      await page.waitForTimeout(800);
+      await new Promise(r => setTimeout(r, 800));
     } else {
       console.log(`🟢 ${email}`);
       fs.appendFileSync(LOG_PATH, `🟢 ${email}\n`);
