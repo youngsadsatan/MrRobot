@@ -87,4 +87,3 @@ function sleepRandom(min, max) {
 
   await browser.close();
 })();
-```0
