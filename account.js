@@ -1,14 +1,12 @@
 /**
- * Bulk registra em EroMe com OCR Tesseract.js + pré-processamento avançado
- * Logs em register.log:
- *  🟢 — e-mail livre (interrompe)
- *  🔴 — e-mail já usado
+ * Bulk registra em EroMe usando Puppeteer + PaddleOCR
+ * – recarrega a página após cada tentativa
+ * – 🟢 e 🔴 em register.log
  */
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const puppeteer = require('puppeteer');
-const Tesseract = require('tesseract.js');
-const sharp = require('sharp');
 
 function sleepRandom(min, max) {
   const t = Math.floor(Math.random() * (max - min + 1)) + min;
@@ -19,33 +17,23 @@ function sleepRandom(min, max) {
   const SITE = process.env.SITE_URL;
   const USER = process.env.USERNAME;
   const PASS = process.env.PASSWORD;
-  const LOG_PATH = path.resolve(__dirname, 'register.log');
+  const LOG = path.resolve(__dirname, '..', 'register.log');
 
-  fs.writeFileSync(LOG_PATH, '', 'utf-8');
-  const emails = fs.readFileSync(path.resolve(__dirname, 'emails.txt'), 'utf-8')
-                   .split(/\r?\n/)
-                   .map(l => l.trim())
-                   .filter(l => l && !l.startsWith('#'));
+  fs.writeFileSync(LOG, '', 'utf8');
+  const emails = fs.readFileSync(path.resolve(__dirname, '..', 'emails.txt'), 'utf8')
+    .split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#'));
 
   const browser = await puppeteer.launch({
     headless: "new",
     args: ['--no-sandbox','--disable-setuid-sandbox']
   });
   const page = await browser.newPage();
-  await page.goto(SITE, { waitUntil: 'networkidle2' });
-  await sleepRandom(5000, 8000);
 
   for (const email of emails) {
-    // limpa campos
-    await page.evaluate(() => {
-      ['name','email','password','password_confirmation','captcha']
-        .forEach(n => {
-          const el = document.querySelector(`input[name="${n}"]`);
-          if (el) el.value = '';
-        });
-    });
+    await page.goto(SITE, { waitUntil: 'networkidle2' });
+    await sleepRandom(5000, 8000);
 
-    // preenche
+    // fill form
     await page.type('#name', USER, { delay: 100 });
     await page.type('#email', email, { delay: 100 });
     await page.type('#password', PASS, { delay: 100 });
@@ -53,59 +41,37 @@ function sleepRandom(min, max) {
 
     await sleepRandom(3000, 5000);
 
-    // captura e resolve CAPTCHA
+    // snapshot captcha
     const img = await page.waitForSelector('form .mb-10 img.initial', { timeout: 10000 });
     const buf = await img.screenshot();
-    let code;
-    try {
-      // pré-processamento avançado:
-      // 1) inverte cores (é “inverse”)
-      // 2) grayscale
-      // 3) resize
-      // 4) blur para reduzir ruído
-      // 5) threshold adaptativo
-      let proc = await sharp(buf)
-        .negate()
-        .grayscale()
-        .resize({ width: 200 })
-        .blur(1)
-        .toBuffer();
+    const tmpPath = path.resolve(__dirname, 'captcha.png');
+    fs.writeFileSync(tmpPath, buf);
 
-      // aplica threshold manualmente
-      proc = await sharp(proc)
-        .threshold(180)
-        .toBuffer();
-
-      const { data: { text } } = await Tesseract.recognize(proc, 'eng', {
-        tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
-      });
-      code = text.replace(/[^0-9A-Za-z]/g, '').substr(0,4);
-      if (code.length !== 4) throw new Error('len');
-    } catch (e) {
-      console.log(`⚠️ OCR falhou para ${email}, recarregando captcha`);
-      await page.click('form .mb-10 img.initial');
-      await sleepRandom(4000, 6000);
-      continue;
+    // solve via Python/PaddleOCR
+    const res = spawnSync('python3', ['automation/captcha.py', tmpPath], { encoding: 'utf8' });
+    const code = (res.stdout||'').trim();
+    if (!/^[0-9A-Za-z]{4}$/.test(code)) {
+      console.log(`⚠️ OCR falhou para ${email}`);
+      fs.appendFileSync(LOG, `⚠️ OCR falhou para ${email}\n`);
+      continue;  // reload next loop
     }
 
     await page.type('input[name="captcha"]', code, { delay: 100 });
     await sleepRandom(1000, 2000);
 
-    // submete e aguarda resposta
+    // submit
     await Promise.all([
       page.click('button[type="submit"]'),
-      page.waitForResponse(res => res.url().includes('/user/register') && res.status() === 200)
+      page.waitForNavigation({ waitUntil: 'networkidle2' })
     ]);
 
     const html = await page.content();
     if (/The email is already used\./.test(html)) {
       console.log(`🔴 ${email}`);
-      fs.appendFileSync(LOG_PATH, `🔴 ${email}\n`);
-      await page.click('form .mb-10 img.initial');
-      await sleepRandom(4000, 6000);
+      fs.appendFileSync(LOG, `🔴 ${email}\n`);
     } else {
       console.log(`🟢 ${email}`);
-      fs.appendFileSync(LOG_PATH, `🟢 ${email}\n`);
+      fs.appendFileSync(LOG, `🟢 ${email}\n`);
       break;
     }
 
