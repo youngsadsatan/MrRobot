@@ -43,8 +43,8 @@ const sharp = require('sharp');
     await page.type('input[name="password"]', PASS);
     await page.type('input[name="password_confirmation"]', PASS);
 
-    // captura e resolve captcha
-    const img = await page.$('form img[alt="Captcha"]');
+    // aguarda e captura captcha
+    const img = await page.waitForSelector('form img', { timeout: 5000 });
     const buf = await img.screenshot();
     let code;
     try {
@@ -57,7 +57,7 @@ const sharp = require('sharp');
       if (code.length !== 4) throw new Error('len');
     } catch {
       console.log(`⚠️ OCR falhou para ${email}, recarregando captcha`);
-      await page.click('form img[alt="Captcha"]');
+      await page.click('form img');             // recarrega o captcha clicando na imagem
       await page.waitForTimeout(800);
       continue; // tenta mesmo e-mail com novo captcha
     }
@@ -74,7 +74,7 @@ const sharp = require('sharp');
       console.log(`🔴 ${email}`);
       fs.appendFileSync(LOG_PATH, `🔴 ${email}\n`);
       // recarrega apenas o captcha
-      await page.click('form img[alt="Captcha"]');
+      await page.click('form img');
       await page.waitForTimeout(800);
     } else {
       console.log(`🟢 ${email}`);
