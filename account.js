@@ -1,5 +1,5 @@
 /**
- * Bulk registra em EroMe com OCR Tesseract.js + delays human-based
+ * Bulk registra em EroMe com OCR Tesseract.js + pré-processamento avançado
  * Logs em register.log:
  *  🟢 — e-mail livre (interrompe)
  *  🔴 — e-mail já usado
@@ -10,7 +10,6 @@ const puppeteer = require('puppeteer');
 const Tesseract = require('tesseract.js');
 const sharp = require('sharp');
 
-// sleep com tempo randômico entre min e max (ms)
 function sleepRandom(min, max) {
   const t = Math.floor(Math.random() * (max - min + 1)) + min;
   return new Promise(r => setTimeout(r, t));
@@ -34,35 +33,47 @@ function sleepRandom(min, max) {
   });
   const page = await browser.newPage();
   await page.goto(SITE, { waitUntil: 'networkidle2' });
-  await sleepRandom(4000, 7000); // delay inicial
+  await sleepRandom(5000, 8000);
 
   for (const email of emails) {
     // limpa campos
     await page.evaluate(() => {
       ['name','email','password','password_confirmation','captcha']
-        .forEach(n => document.querySelector(`input[name="${n}"]`).value = '');
+        .forEach(n => {
+          const el = document.querySelector(`input[name="${n}"]`);
+          if (el) el.value = '';
+        });
     });
 
-    // preenche campos
-    await page.type('#name', USER);
-    await page.type('#email', email);
-    await page.type('#password', PASS);
-    await page.type('#password-confirm', PASS);
+    // preenche
+    await page.type('#name', USER, { delay: 100 });
+    await page.type('#email', email, { delay: 100 });
+    await page.type('#password', PASS, { delay: 100 });
+    await page.type('#password-confirm', PASS, { delay: 100 });
 
-    await sleepRandom(2000, 4000); // pausa antes do captcha
+    await sleepRandom(3000, 5000);
 
     // captura e resolve CAPTCHA
-    const img = await page.waitForSelector('form .mb-10 img.initial', { timeout: 8000 });
+    const img = await page.waitForSelector('form .mb-10 img.initial', { timeout: 10000 });
     const buf = await img.screenshot();
     let code;
     try {
-      // pré-processamento reforçado
-      const proc = await sharp(buf)
+      // pré-processamento avançado:
+      // 1) inverte cores (é “inverse”)
+      // 2) grayscale
+      // 3) resize
+      // 4) blur para reduzir ruído
+      // 5) threshold adaptativo
+      let proc = await sharp(buf)
+        .negate()
         .grayscale()
         .resize({ width: 200 })
-        .median(1)
-        .normalize()
-        .threshold(150)
+        .blur(1)
+        .toBuffer();
+
+      // aplica threshold manualmente
+      proc = await sharp(proc)
+        .threshold(180)
         .toBuffer();
 
       const { data: { text } } = await Tesseract.recognize(proc, 'eng', {
@@ -70,15 +81,15 @@ function sleepRandom(min, max) {
       });
       code = text.replace(/[^0-9A-Za-z]/g, '').substr(0,4);
       if (code.length !== 4) throw new Error('len');
-    } catch {
+    } catch (e) {
       console.log(`⚠️ OCR falhou para ${email}, recarregando captcha`);
       await page.click('form .mb-10 img.initial');
-      await sleepRandom(3000, 5000);
+      await sleepRandom(4000, 6000);
       continue;
     }
 
-    await page.type('input[name="captcha"]', code);
-    await sleepRandom(1000, 2000); // breve pausa antes do submit
+    await page.type('input[name="captcha"]', code, { delay: 100 });
+    await sleepRandom(1000, 2000);
 
     // submete e aguarda resposta
     await Promise.all([
@@ -91,13 +102,14 @@ function sleepRandom(min, max) {
       console.log(`🔴 ${email}`);
       fs.appendFileSync(LOG_PATH, `🔴 ${email}\n`);
       await page.click('form .mb-10 img.initial');
+      await sleepRandom(4000, 6000);
     } else {
       console.log(`🟢 ${email}`);
       fs.appendFileSync(LOG_PATH, `🟢 ${email}\n`);
       break;
     }
 
-    await sleepRandom(5000, 8000); // pausa longa entre e-mails
+    await sleepRandom(6000, 10000);
   }
 
   await browser.close();
