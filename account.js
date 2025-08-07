@@ -1,7 +1,7 @@
 /**
- * Bulk registra em EroMe a partir de uma lista de e-mails usando OCR Tesseract.js
+ * Bulk registra em EroMe com OCR Tesseract.js + delays human-based
  * Logs em register.log:
- *  🟢 — e-mail livre (e loop interrompido)
+ *  🟢 — e-mail livre (interrompe)
  *  🔴 — e-mail já usado
  */
 const fs = require('fs');
@@ -10,16 +10,19 @@ const puppeteer = require('puppeteer');
 const Tesseract = require('tesseract.js');
 const sharp = require('sharp');
 
+// sleep com tempo randômico entre min e max (ms)
+function sleepRandom(min, max) {
+  const t = Math.floor(Math.random() * (max - min + 1)) + min;
+  return new Promise(r => setTimeout(r, t));
+}
+
 (async () => {
   const SITE = process.env.SITE_URL;
   const USER = process.env.USERNAME;
   const PASS = process.env.PASSWORD;
   const LOG_PATH = path.resolve(__dirname, 'register.log');
 
-  // inicia log
   fs.writeFileSync(LOG_PATH, '', 'utf-8');
-
-  // carrega e-mails, removendo linhas vazias e comentários que começam com #
   const emails = fs.readFileSync(path.resolve(__dirname, 'emails.txt'), 'utf-8')
                    .split(/\r?\n/)
                    .map(l => l.trim())
@@ -31,6 +34,7 @@ const sharp = require('sharp');
   });
   const page = await browser.newPage();
   await page.goto(SITE, { waitUntil: 'networkidle2' });
+  await sleepRandom(4000, 7000); // delay inicial
 
   for (const email of emails) {
     // limpa campos
@@ -39,19 +43,28 @@ const sharp = require('sharp');
         .forEach(n => document.querySelector(`input[name="${n}"]`).value = '');
     });
 
-    // preenche
-    await page.type('input[name="name"]', USER);
-    await page.type('input[name="email"]', email);
-    await page.type('input[name="password"]', PASS);
-    await page.type('input[name="password_confirmation"]', PASS);
+    // preenche campos
+    await page.type('#name', USER);
+    await page.type('#email', email);
+    await page.type('#password', PASS);
+    await page.type('#password-confirm', PASS);
 
-    // aguarda e captura captcha
-    const img = await page.waitForSelector('form img', { timeout: 5000 });
+    await sleepRandom(2000, 4000); // pausa antes do captcha
+
+    // captura e resolve CAPTCHA
+    const img = await page.waitForSelector('form .mb-10 img.initial', { timeout: 8000 });
     const buf = await img.screenshot();
     let code;
     try {
-      // pré-processa e OCR
-      const proc = await sharp(buf).grayscale().normalise().threshold(150).toBuffer();
+      // pré-processamento reforçado
+      const proc = await sharp(buf)
+        .grayscale()
+        .resize({ width: 200 })
+        .median(1)
+        .normalize()
+        .threshold(150)
+        .toBuffer();
+
       const { data: { text } } = await Tesseract.recognize(proc, 'eng', {
         tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
       });
@@ -59,12 +72,13 @@ const sharp = require('sharp');
       if (code.length !== 4) throw new Error('len');
     } catch {
       console.log(`⚠️ OCR falhou para ${email}, recarregando captcha`);
-      await page.click('form img');
-      // aguarda 800ms
-      await new Promise(r => setTimeout(r, 800));
-      continue; // repete o mesmo email com novo captcha
+      await page.click('form .mb-10 img.initial');
+      await sleepRandom(3000, 5000);
+      continue;
     }
+
     await page.type('input[name="captcha"]', code);
+    await sleepRandom(1000, 2000); // breve pausa antes do submit
 
     // submete e aguarda resposta
     await Promise.all([
@@ -76,14 +90,14 @@ const sharp = require('sharp');
     if (/The email is already used\./.test(html)) {
       console.log(`🔴 ${email}`);
       fs.appendFileSync(LOG_PATH, `🔴 ${email}\n`);
-      // recarrega apenas o captcha
-      await page.click('form img');
-      await new Promise(r => setTimeout(r, 800));
+      await page.click('form .mb-10 img.initial');
     } else {
       console.log(`🟢 ${email}`);
       fs.appendFileSync(LOG_PATH, `🟢 ${email}\n`);
-      break; // interrompe no primeiro sucesso
+      break;
     }
+
+    await sleepRandom(5000, 8000); // pausa longa entre e-mails
   }
 
   await browser.close();
