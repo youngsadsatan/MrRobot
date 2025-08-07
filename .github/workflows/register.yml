@@ -21,14 +21,12 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-        working-directory: ./automation
 
       - name: Run bulk register
         run: node account.js
-        working-directory: ./automation
 
       - name: Upload log
         uses: actions/upload-artifact@v4
         with:
           name: erome-register-log
-          path: ./automation/register.log
+          path: ./register.log
